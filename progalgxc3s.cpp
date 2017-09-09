@@ -98,16 +98,20 @@ void ProgAlgXC3S::flow_array_program(BitFile &file)
 {
   Timer timer;
   unsigned int i;
-  for(i=0; i<file.getLength(); i += array_transfer_len)
+  unsigned int len = file.getLength();
+  for(i=0; i < len; i += array_transfer_len)
     {
       jtag->shiftIR(ISC_PROGRAM);
       jtag->shiftDR(&(file.getData())[i/8],0,array_transfer_len);
       jtag->cycleTCK(1);
-      if((i % (10000*array_transfer_len)) == 0)
-	{
-	  fprintf(stderr,".");
-	  fflush(stderr);
-	}
+      //if((i % (10000*array_transfer_len)) == 0){
+      if((i % (100*array_transfer_len)) == 0){
+        fprintf(stderr,"%d of %d \n", i, len);
+	    //fprintf(stderr,".");
+	    fflush(stderr);
+	  }
+	  //fprintf(stderr,"%d of %d \n", i, len);
+      //fflush(stderr);
     }
   
   // Print the timing summary
@@ -238,8 +242,8 @@ void ProgAlgXC3S::array_program(BitFile &file)
     }
 
   /* use legacy, as large USB transfers are faster then chunks */
-  flow_program_legacy(file);
-  /*flow_array_program(file);*/
+  //flow_program_legacy(file);
+  flow_array_program(file);
   flow_disable();
 
   /* NOTE: Virtex7 devices do not support flow_program_legacy according

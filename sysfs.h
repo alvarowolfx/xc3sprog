@@ -1,5 +1,8 @@
 #include "iobase.h"
 
+#include <pio/gpio.h>
+#include <pio/peripheral_manager_client.h>
+
 class IOSysFsGPIO : public IOBase {
  public:
   IOSysFsGPIO();
@@ -14,17 +17,17 @@ class IOSysFsGPIO : public IOBase {
                   bool last);
   void tx_tms(unsigned char *pat, int length, int force);
 
-  int open_write_close(const char *name, const char *valstr);
-  int setup_gpio(int gpio, int is_input);
-  void unexport_gpio(int gpio);
+  AGpio* setup_gpio(int gpio, int is_input);
   bool is_gpio_valid(int gpio) { return gpio >= 0 && gpio < 1000; }
 
  private:
-  int tck_fd;
-  int tms_fd;
-  int tdi_fd;
-  int tdo_fd;
+  APeripheralManagerClient* client;
+  AGpio* tck_gpio;
+  AGpio* tms_gpio;
+  AGpio* tdi_gpio;
+  AGpio* tdo_gpio;
+  AGpio* led_gpio;
 
-  const char *one;
-  const char *zero;
+  const int one;
+  const int zero;
 };

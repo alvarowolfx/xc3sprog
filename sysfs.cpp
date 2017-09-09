@@ -10,24 +10,38 @@
 
 #include <iostream>
 
+#include <pio/gpio.h>
+#include <pio/peripheral_manager_client.h>
+
 const int TDIPin = 22;
 const int TMSPin = 4;
 const int TCKPin = 17;
 const int TDOPin = 27;
+const int LEDPin = 21;
 
 IOSysFsGPIO::IOSysFsGPIO()
-    : tck_fd(-1), tms_fd(-1), tdi_fd(-1), tdo_fd(-1), one("1"), zero("0") {
-  tdi_fd = setup_gpio(TDIPin, 0);
-  tms_fd = setup_gpio(TMSPin, 0);
-  tck_fd = setup_gpio(TCKPin, 0);
-  tdo_fd = setup_gpio(TDOPin, 1);
+    : tdi_gpio(NULL), tms_gpio(NULL), tck_gpio(NULL), tdo_gpio(NULL), client(NULL), one(1), zero(0) {
+
+  client = APeripheralManagerClient_new();
+
+  tdi_gpio = setup_gpio(TDIPin, 0);
+  tms_gpio = setup_gpio(TMSPin, 0);
+  tck_gpio = setup_gpio(TCKPin, 0);
+  tdo_gpio = setup_gpio(TDOPin, 1);
+
+  //led_gpio = setup_gpio(LEDPin, 0);
 }
 
 IOSysFsGPIO::~IOSysFsGPIO() {
-  unexport_gpio(TDIPin);
-  unexport_gpio(TMSPin);
-  unexport_gpio(TCKPin);
-  unexport_gpio(TDOPin);
+
+  AGpio_delete(tck_gpio);
+  AGpio_delete(tms_gpio);
+  AGpio_delete(tdi_gpio);
+  AGpio_delete(tdo_gpio);
+
+  //AGpio_delete(led_gpio);
+
+  APeripheralManagerClient_delete(client);
 }
 
 int IOSysFsGPIO::setupGPIOs(int tck, int tms, int tdi, int tdo) { return 1; }
@@ -55,7 +69,8 @@ void IOSysFsGPIO::txrx_block(const unsigned char *tdi, unsigned char *tdo,
   tdo_byte = tdo_byte + (txrx(last, (tdi_byte & 1) == 1) << (i % 8));
   if (tdo) tdo[j] = tdo_byte;
 
-  write(tck_fd, zero, 1);
+  //write(tck_fd, zero, 1);
+  AGpio_setValue(tck_gpio, zero);
 
   return;
 }
@@ -69,83 +84,76 @@ void IOSysFsGPIO::tx_tms(unsigned char *pat, int length, int force) {
     tms = tms >> 1;
   }
 
-  write(tck_fd, zero, 1);
+  //write(tck_fd, zero, 1);
+  AGpio_setValue(tck_gpio, zero);
 }
 
 void IOSysFsGPIO::tx(bool tms, bool tdi) {
-  write(tck_fd, zero, 1);
+  //write(tck_fd, zero, 1);
+  AGpio_setValue(tck_gpio, zero);
 
-  write(tdi_fd, tdi ? one : zero, 1);
+  //write(tdi_fd, tdi ? one : zero, 1);
+  AGpio_setValue(tdi_gpio, tdi ? one : zero);
 
-  write(tms_fd, tms ? one : zero, 1);
+  //write(tms_fd, tms ? one : zero, 1);
+  AGpio_setValue(tms_gpio, tms ? one : zero);
 
-  write(tck_fd, one, 1);
+  //write(tck_fd, one, 1);
+  AGpio_setValue(tck_gpio, one);
+
+  //AGpio_setValue(led_gpio, tms ? one : zero);
 }
 
 bool IOSysFsGPIO::txrx(bool tms, bool tdi) {
-  static char buf[1];
+  //static char buf[1];
 
   tx(tms, tdi);
 
-  lseek(tdo_fd, 0, SEEK_SET);
+  /*lseek(tdo_fd, 0, SEEK_SET);
 
   if (read(tdo_fd, &buf, sizeof(buf)) < 0) {
-    /* reading tdo failed */
+    // reading tdo failed
     return false;
   }
   return buf[0] != '0';
-}
-
-int IOSysFsGPIO::open_write_close(const char *name, const char *valstr) {
-  int ret;
-  int fd = open(name, O_WRONLY);
-  if (fd < 0) return fd;
-
-  ret = write(fd, valstr, strlen(valstr));
-  close(fd);
-
-  return ret;
-}
-
-int IOSysFsGPIO::setup_gpio(int gpio, int is_input) {
-  char buf[40];
-  char gpiostr[4];
-
-  snprintf(gpiostr, sizeof(gpiostr), "%d", gpio);
-  if (open_write_close("/sys/class/gpio/export", gpiostr) < 0) {
-    if (errno == EBUSY) {
-      std::cerr << "WARNING: gpio " << gpio << " already exported" << std::endl;
-    } else {
-      std::cerr << "ERROR: Couldn't export gpio " << gpio << std::endl;
-      return 0;
-    }
+  */
+  int gpioValue;
+  if(AGpio_getValue(tdo_gpio, &gpioValue) != 0){
+    // reading tdo failed
+    std::cerr << "ERROR: Couldn't read from tdo pin " << std::endl;
+    return false;
   }
+  return gpioValue != 0;
+}
 
-  snprintf(buf, sizeof(buf), "/sys/class/gpio/gpio%d/direction", gpio);
-  if (open_write_close(buf, is_input ? "in" : "out") < 0) {
-    std::cerr << "ERROR: Couldn't set direction for gpio " << gpio << std::endl;
-    unexport_gpio(gpio);
+AGpio* IOSysFsGPIO::setup_gpio(int gpio, int is_input) {
+
+  AGpio* gpioPin;
+  char gpiostr[6];
+  snprintf(gpiostr, sizeof(gpiostr), "BCM%d", gpio);
+
+  int openResult = APeripheralManagerClient_openGpio(client, gpiostr, &gpioPin);
+
+  if (openResult != 0) {
+    std::cerr << "ERROR: Couldn't export gpio " << gpio << std::endl;
     return 0;
   }
 
-  snprintf(buf, sizeof(buf), "/sys/class/gpio/gpio%d/value", gpio);
-  int fd = open(buf, O_RDWR | O_NONBLOCK | O_SYNC);
-  if (fd < 0) {
-    std::cerr << "ERROR: Couldn't open value for gpio " << gpio << std::endl;
-    unexport_gpio(gpio);
+  AGpioDirection direction = is_input ? AGPIO_DIRECTION_IN : AGPIO_DIRECTION_OUT_INITIALLY_LOW;
+  int setDirectionResult = AGpio_setDirection(gpioPin, direction);
+
+  if(setDirectionResult != 0){
+    std::cerr << "ERROR: Couldn't set direction for gpio " << gpio << std::endl;
+    AGpio_delete(gpioPin);
+    return 0;
   }
 
-  return fd;
-}
-
-void IOSysFsGPIO::unexport_gpio(int gpio) {
-  char gpiostr[4];
-
-  if (!is_gpio_valid(gpio)) return;
-
-  snprintf(gpiostr, sizeof(gpiostr), "%d", gpio);
-  if (open_write_close("/sys/class/gpio/unexport", gpiostr) <
-      0) {  // LOG_ERROR("Couldn't unexport gpio %d", gpio);
+  int setActiveTypeResult = AGpio_setActiveType(gpioPin, AGPIO_ACTIVE_HIGH);
+  if(setActiveTypeResult != 0){
+    std::cerr << "ERROR: Couldn't set active type for gpio " << gpio << std::endl;
+    AGpio_delete(gpioPin);
+    return 0;
   }
-  return;
+
+  return gpioPin;
 }

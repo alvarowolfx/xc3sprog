@@ -11,8 +11,13 @@ if (CMAKE_VERSION VERSION_LESS 100)
   enable_language (C)
 endif ()
 
-
-
+# Add FindAndroidThings.cmake dir to the module path.
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/../libandroidthings)
+set(ANDROIDTHINGS_LIBRARY ${CMAKE_SOURCE_DIR}/../libandroidthings/armeabi-v7a/lib/libandroidthings.so)
+set(ANDROIDTHINGS_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/../libandroidthings/armeabi-v7a/include)
+# Resolve Android Things headers and libraries
+find_package(AndroidThings REQUIRED)
+include_directories(${ANDROIDTHINGS_INCLUDE_DIR})
 
 include_directories(${CMAKE_SOURCE_DIR})
 
@@ -38,10 +43,9 @@ add_library(xc3sproglib  STATIC sysfs.cpp
                         ${CONDITIONAL_FILES} devices.h cables.h)
 
 add_executable(xc3sprog xc3sprog.cpp srecfile.cpp devices.h)
-target_link_libraries(xc3sprog xc3sproglib ${CONDITIONAL_LIBS}  ${LIBS} )
+
+target_link_libraries(xc3sprog xc3sproglib ${CONDITIONAL_LIBS}  ${LIBS} ${ANDROIDTHINGS_LIBRARIES})
 set_property(TARGET xc3sprog PROPERTY CXX_STANDARD 11)
-
 install(TARGETS xc3sprog DESTINATION bin)
-
 
 SET_DIRECTORY_PROPERTIES(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${GENERATED_FILES}") 
